@@ -47,6 +47,12 @@ function normalizeAddresses(list) {
 
 function parseTx(tx) {
     const parsed = Object.assign({}, tx);
+    if (parsed.from) {
+        parsed.from = parsed.from.toLowerCase();
+    }
+    if (parsed.to) {
+        parsed.to = parsed.to.toLowerCase();
+    }
     if (parsed.gasPrice && ethers.BigNumber.isBigNumber(parsed.gasPrice)) {
         parsed.gasPrice = parsed.gasPrice.toString();
     }
