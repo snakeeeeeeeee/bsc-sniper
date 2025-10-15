@@ -1,0 +1,26 @@
+{
+  "name": "mmg-alphapoint-service",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node ./src/scripts/buy-and-bundle.js",
+    "dry-run": "node ./scripts/dry-run.js",
+    "buy-bundle": "node ./scripts/buy-and-bundle.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.4.0",
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7",
+    "ethers": "^5.7.2",
+    "fastify": "^5.3.3",
+    "hardhat": "^2.24.0",
+    "js-sha3": "^0.9.3",
+    "nodemailer": "^6.10.0",
+    "web3": "^1.10.0",
+    "ws": "^8.14.2"
+  }
+}
