@@ -216,8 +216,8 @@ class SwapBuyer {
         const tipWei = process.env.BUNDLE_BUILDER_TIP_BNB
             ? ethers.utils.parseEther(process.env.BUNDLE_BUILDER_TIP_BNB)
             : ethers.constants.Zero;
-        const blockzeroRpc = process.env.PUISSANT_BUILDER_RPC || process.env.BUNDLE_BLOCKZERO_RPC;
-        const bundle48Rpc = process.env.BUNDLE48_RPC_URL;
+        const blockzeroRpc = process.env.PUISSANT_BUILDER_RPC || 'https://rpc.blockrazor.builders/';
+        const bundle48Rpc = process.env.BUNDLE48_RPC_URL || 'https://puissant-builder.48.club';
         const blockzeroTip = safeAddress(process.env.PUISSANT_BUILDER_ADDRESS || '0x1266C6bE60392A8Ff346E8d5ECCd3E69dD9c5F20');
         const bundle48Tip = safeAddress(process.env.BUNDLE48_BUILDER_ADDRESS || '0x4848489f0b2BEdd788c696e2D79b6b69D7484848');
 
