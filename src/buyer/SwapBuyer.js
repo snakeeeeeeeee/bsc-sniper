@@ -471,8 +471,10 @@ class SwapBuyer {
             }));
         }
 
+        const startAll = Date.now();
         const results = [];
         for (const wallet of this.wallets) {
+            const startWallet = Date.now();
             const context = {
                 provider: this.provider,
                 wallet,
@@ -480,7 +482,10 @@ class SwapBuyer {
                 overrideAmountIn: override.amount
             };
             try {
+                const buildStart = Date.now();
                 const build = await strategy.buildTx(parseModel, context);
+                const buildElapsed = Date.now() - buildStart;
+                this.logger.info(`[build] wallet=${wallet.address} 协议=${parseModel.protocol}/${parseModel.method} 耗时=${buildElapsed}ms`);
                 if (!build || build.skip) {
                     results.push({
                         wallet: wallet.address,
@@ -503,6 +508,7 @@ class SwapBuyer {
                     txRequest.gasLimit = await wallet.estimateGas(Object.assign({}, txRequest));
                 }
                 if (this.config.simulateBeforeSend) {
+                    const simStart = Date.now();
                     try {
                         const simulationTx = Object.assign({}, txRequest);
                         if (simulationTx.gasPrice) {
@@ -518,6 +524,8 @@ class SwapBuyer {
                             delete simulationTx.nonce;
                         }
                         await wallet.call(simulationTx);
+                        const simElapsed = Date.now() - simStart;
+                        this.logger.info(`[simulate] wallet=${wallet.address} 协议=${parseModel.protocol}/${parseModel.method} 耗时=${simElapsed}ms`);
                     } catch (simErr) {
                         results.push({
                             wallet: wallet.address,
@@ -546,11 +554,18 @@ class SwapBuyer {
                 }
                 const canBundle = this.bundleConfig.enabled && !this.config.dryRun && targetPendingTx && !bundleSetupError;
                 if (canBundle) {
+                    const bundleStart = Date.now();
                     const bundleOutcome = await this.executeBundle({
                         wallet,
                         txRequest,
                         targetRaw
                     });
+                    const bundleElapsed = Date.now() - bundleStart;
+                    if (bundleOutcome.success) {
+                        this.logger.info(`[bundle] wallet=${wallet.address} 成功 tx=${bundleOutcome.txHash} 耗时=${bundleElapsed}ms`);
+                    } else {
+                        this.logger.warn(`[bundle] wallet=${wallet.address} 失败: ${bundleOutcome.error || 'unknown'} 耗时=${bundleElapsed}ms`);
+                    }
                     if (bundleOutcome.success) {
                         results.push({
                             wallet: wallet.address,
@@ -579,7 +594,10 @@ class SwapBuyer {
                     continue;
                 }
 
+                const sendStart = Date.now();
                 const response = await wallet.sendTransaction(txRequest);
+                const sendElapsed = Date.now() - sendStart;
+                this.logger.info(`[send] wallet=${wallet.address} tx=${response.hash} 耗时=${sendElapsed}ms`);
                 results.push({
                     wallet: wallet.address,
                     protocol: parseModel.protocol,
@@ -601,7 +619,11 @@ class SwapBuyer {
                     error: err.message || String(err)
                 });
             }
+            const walletElapsed = Date.now() - startWallet;
+            this.logger.info(`[wallet-done] wallet=${wallet.address} 总耗时=${walletElapsed}ms`);
         }
+        const totalElapsed = Date.now() - startAll;
+        this.logger.info(`[execute-done] 协议=${parseModel.protocol}/${parseModel.method} 钱包数=${this.wallets.length} 总耗时=${totalElapsed}ms`);
         return results;
     }
 }
