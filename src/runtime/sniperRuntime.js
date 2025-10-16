@@ -7,9 +7,10 @@ const { createLogger } = require('../utils/Logger');
 async function startSniperRuntime(options = {}) {
     const listenMode = options.listenMode;
     const logger = options.logger || createLogger(`sniper:${listenMode || 'auto'}`);
+    const wsUrl = options.wsUrl || process.env.BSC_WSS_URL;
     const httpUrl = options.httpUrl || process.env.BSC_HTTP_URL;
-    if (!httpUrl) {
-        throw new Error('缺少 BSC_HTTP_URL');
+    if (!wsUrl && !httpUrl) {
+        throw new Error('缺少可用的链节点地址 (BSC_WSS_URL 或 BSC_HTTP_URL)');
     }
     const privateKeysSource = Array.isArray(options.privateKeys)
         ? options.privateKeys
@@ -29,7 +30,10 @@ async function startSniperRuntime(options = {}) {
 
     logger.info(`启动 sniper，监听模式=${listenMode || 'auto'}，监控地址数=${monitorAddresses.length}`);
 
-    const provider = new ethers.providers.JsonRpcProvider(httpUrl);
+    const provider = wsUrl
+        ? new ethers.providers.WebSocketProvider(wsUrl)
+        : new ethers.providers.JsonRpcProvider(httpUrl);
+    logger.info(`SwapBuyer provider 类型=${wsUrl ? 'ws' : 'http'}`);
     const buyer = new SwapBuyer({ provider, privateKeys });
     const unregister = registerSwapFollow(buyer, { logger });
 
@@ -53,7 +57,14 @@ async function startSniperRuntime(options = {}) {
                 listener.wsProvider._websocket.terminate();
             }
         } catch (err) {
-            logger.error('关闭 WebSocket 失败:', err.message || err);
+            logger.error('关闭监听 WebSocket 失败:', err.message || err);
+        }
+        try {
+            if (provider._websocket && provider._websocket.terminate) {
+                provider._websocket.terminate();
+            }
+        } catch (err) {
+            logger.error('关闭买单 WebSocket 失败:', err.message || err);
         }
     };
 

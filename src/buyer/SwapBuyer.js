@@ -362,7 +362,7 @@ class SwapBuyer {
         try {
             const bundleStart = Date.now();
             this.logger.info(`[bundle-start] wallet=${wallet.address} includeTarget=${this.bundleConfig.includeTarget && !!targetRaw}`);
-            const chainId = await wallet.getChainId();
+            const chainId = 56;
             const nonce = await this.reserveNonce(wallet);
             this.logger.info(`[bundle-nonce] wallet=${wallet.address} chainId=${chainId} nonce=${nonce}`);
             const txForSign = Object.assign({}, txRequest, {

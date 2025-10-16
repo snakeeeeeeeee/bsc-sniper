@@ -5,10 +5,11 @@ const { SwapParseListener } = require('./src/listener/SwapParseListener');
 const { SwapBuyer, registerSwapFollow } = require('./src/buyer');
 
 async function main() {
+    const wsUrl = process.env.BSC_WSS_URL;
     const httpUrl = process.env.BSC_HTTP_URL;
     const privateKeyRaw = process.env.PRIVATE_KEY || '';
-    if (!httpUrl) {
-        throw new Error('缺少 BSC_HTTP_URL');
+    if (!wsUrl && !httpUrl) {
+        throw new Error('缺少 BSC_WSS_URL 或 BSC_HTTP_URL');
     }
     if (!privateKeyRaw) {
         throw new Error('缺少 PRIVATE_KEY');
@@ -21,7 +22,10 @@ async function main() {
         throw new Error('未解析到任何私钥');
     }
 
-    const provider = new ethers.providers.JsonRpcProvider(httpUrl);
+    const provider = wsUrl
+        ? new ethers.providers.WebSocketProvider(wsUrl)
+        : new ethers.providers.JsonRpcProvider(httpUrl);
+    console.log(`[follow-runner] buyer provider 类型=${wsUrl ? 'ws' : 'http'}`);
     const buyer = new SwapBuyer({ provider, privateKeys });
     registerSwapFollow(buyer);
 
@@ -39,7 +43,14 @@ async function main() {
                 listener.wsProvider._websocket.terminate();
             }
         } catch (err) {
-            console.error('关闭 WebSocket 失败:', err.message);
+            console.error('关闭监听 WebSocket 失败:', err.message);
+        }
+        try {
+            if (provider._websocket && provider._websocket.terminate) {
+                provider._websocket.terminate();
+            }
+        } catch (err) {
+            console.error('关闭买单 WebSocket 失败:', err.message);
         }
         process.exit(0);
     };
