@@ -170,6 +170,10 @@ class SwapBuyer {
         ];
         this.bundleConfig = this.buildBundleConfig();
         this.nonceCache = new Map();
+        this.nonceCacheTtlMs = Number(process.env.BUNDLE_NONCE_TTL_MS || '2000');
+        this.nonceRefreshIntervalMs = Number(process.env.BUNDLE_NONCE_REFRESH_MS || '1000');
+        this.nonceInterval = null;
+        this.startNonceRefresher();
     }
 
     pickStrategy(parseModel) {
@@ -294,12 +298,18 @@ class SwapBuyer {
     async reserveNonce(wallet) {
         const addr = wallet.address.toLowerCase();
         const cached = this.nonceCache.get(addr);
+        const now = Date.now();
         if (cached && cached.nextNonce !== undefined && !cached.locked) {
-            cached.locked = true;
-            cached.lastUpdate = Date.now();
-            this.nonceCache.set(addr, cached);
-            this.logger.info(`[nonce-cache] hit wallet=${wallet.address} nonce=${cached.nextNonce}`);
-            return cached.nextNonce;
+            const ttl = this.nonceCacheTtlMs;
+            if (ttl > 0 && (now - (cached.lastUpdate || 0)) > ttl) {
+                this.logger.info(`[nonce-cache] expired wallet=${wallet.address} last=${cached.lastUpdate || 0}`);
+            } else {
+                cached.locked = true;
+                cached.lastUpdate = now;
+                this.nonceCache.set(addr, cached);
+                this.logger.info(`[nonce-cache] hit wallet=${wallet.address} nonce=${cached.nextNonce}`);
+                return cached.nextNonce;
+            }
         }
         const start = Date.now();
         const [latest, pending] = await Promise.all([
@@ -339,6 +349,42 @@ class SwapBuyer {
             cached.lastUpdate = Date.now();
             this.nonceCache.set(addr, cached);
             this.logger.warn(`[nonce-reset] wallet=${wallet.address}`);
+        }
+    }
+
+    startNonceRefresher() {
+        if (this.nonceInterval || this.nonceRefreshIntervalMs <= 0) {
+            return;
+        }
+        const intervalMs = this.nonceRefreshIntervalMs;
+        const refresh = async () => {
+            for (const wallet of this.wallets) {
+                try {
+                    const addr = wallet.address.toLowerCase();
+                    const cached = this.nonceCache.get(addr);
+                    if (cached && cached.locked) {
+                        continue;
+                    }
+                    const latest = await this.provider.getTransactionCount(wallet.address, 'latest');
+                    this.nonceCache.set(addr, {
+                        nextNonce: latest,
+                        locked: false,
+                        lastUpdate: Date.now()
+                    });
+                    this.logger.info(`[nonce-refresh] wallet=${wallet.address} latest=${latest}`);
+                } catch (err) {
+                    this.logger.warn(`[nonce-refresh] wallet=${wallet.address} 失败: ${err.message || err}`);
+                }
+            }
+        };
+        refresh().catch(() => {});
+        this.nonceInterval = setInterval(() => refresh().catch(() => {}), intervalMs);
+    }
+
+    stopNonceRefresher() {
+        if (this.nonceInterval) {
+            clearInterval(this.nonceInterval);
+            this.nonceInterval = null;
         }
     }
 
