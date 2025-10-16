@@ -312,14 +312,18 @@ class SwapBuyer {
 
     async executeBundle({ wallet, txRequest, targetRaw }) {
         try {
+            const bundleStart = Date.now();
+            this.logger.info(`[bundle-start] wallet=${wallet.address} includeTarget=${this.bundleConfig.includeTarget && !!targetRaw}`);
             const chainId = await wallet.getChainId();
             const nonce = await this.getAlignedNonce(wallet);
+            this.logger.info(`[bundle-nonce] wallet=${wallet.address} chainId=${chainId} nonce=${nonce}`);
             const txForSign = Object.assign({}, txRequest, {
                 nonce,
                 chainId
             });
             if (!txForSign.gasLimit) {
                 txForSign.gasLimit = await wallet.estimateGas(Object.assign({}, txForSign));
+                this.logger.info(`[bundle-gas-estimate] wallet=${wallet.address} gasLimit=${txForSign.gasLimit.toString()}`);
             }
             const signedFrontRun = await wallet.signTransaction(txForSign);
             const frontHash = ethers.utils.keccak256(signedFrontRun);
@@ -327,6 +331,7 @@ class SwapBuyer {
             if (!gasPriceLike) {
                 throw new Error('缺少 gasPrice，无法构建 bundle');
             }
+            this.logger.info(`[bundle-sign] wallet=${wallet.address} frontHash=${frontHash}`);
 
             const plans = [];
             for (const builder of this.bundleConfig.providers) {
@@ -347,6 +352,7 @@ class SwapBuyer {
                     txs.push(tipSigned);
                 }
                 plans.push({ builder, txs });
+                this.logger.info(`[bundle-plan] builder=${builder.name} txCount=${txs.length}`);
             }
             if (plans.length === 0) {
                 return { success: false, error: '未配置 builder，无法发送 bundle' };
@@ -356,6 +362,7 @@ class SwapBuyer {
             const targetBlockNumber = currentBlock + (this.bundleConfig.targetBlockOffset || 1);
             const maxBlockNumber = targetBlockNumber + (this.bundleConfig.maxBlockDelta || 12);
             const maxTimestamp = Math.floor(Date.now() / 1000) + (this.bundleConfig.maxTimestampSeconds || 60);
+            this.logger.info(`[bundle-meta] wallet=${wallet.address} currentBlock=${currentBlock} targetBlock=${targetBlockNumber}`);
 
             const successBuilders = [];
             const errors = [];
@@ -369,12 +376,18 @@ class SwapBuyer {
                 if (plan.builder.spSignature) {
                     params['48spSign'] = plan.builder.spSignature;
                 }
+                const sendStart = Date.now();
+                this.logger.info(`[bundle-send] builder=${plan.builder.name} targetBlock=${targetBlockNumber}`);
                 try {
                     const response = await plan.builder.provider.send('eth_sendBundle', [params]);
                     successBuilders.push({ name: plan.builder.name, response });
+                    const sendElapsed = Date.now() - sendStart;
+                    this.logger.info(`[bundle-send] builder=${plan.builder.name} 成功 耗时=${sendElapsed}ms response=${JSON.stringify(response)}`);
                 } catch (err) {
                     errors.push({ name: plan.builder.name, error: err });
-                    this.logger.warn(`[${plan.builder.name}] bundle 发送失败: ${err.message || err}`);
+                    const sendElapsed = Date.now() - sendStart;
+                    const detail = err?.body || err?.error?.message || '';
+                    this.logger.warn(`[bundle-send] builder=${plan.builder.name} 失败: ${err.message || err} detail=${detail} 耗时=${sendElapsed}ms`);
                 }
             }
 
@@ -386,14 +399,20 @@ class SwapBuyer {
                 };
             }
 
+            const waitStart = Date.now();
             const receipt = await this.waitForInclusion(frontHash, this.bundleConfig.waitForMs || 6000);
             if (!receipt) {
+                const waitElapsed = Date.now() - waitStart;
+                this.logger.warn(`[bundle-wait] wallet=${wallet.address} frontHash=${frontHash} 未确认 耗时=${waitElapsed}ms`);
                 return {
                     success: false,
                     error: 'bundle 未在超时时间内落块',
                     builders: successBuilders
                 };
             }
+            const waitElapsed = Date.now() - waitStart;
+            const totalElapsed = Date.now() - bundleStart;
+            this.logger.info(`[bundle-wait] wallet=${wallet.address} frontHash=${frontHash} 成功 block=${receipt.blockNumber} 耗时=${waitElapsed}ms 总耗时=${totalElapsed}ms`);
 
             return {
                 success: true,
