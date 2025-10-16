@@ -472,6 +472,7 @@ class SwapBuyer {
         }
 
         const startAll = Date.now();
+        this.logger.info(`[execute] 协议=${parseModel.protocol}/${parseModel.method} 动作=${parseModel.action} override=${override.amount.toString()} bundle=${this.bundleConfig.enabled}`);
         const results = [];
         for (const wallet of this.wallets) {
             const startWallet = Date.now();
@@ -502,10 +503,12 @@ class SwapBuyer {
                     from: wallet.address,
                     gasPrice
                 });
+                this.logger.info(`[tx] wallet=${wallet.address} gasPrice=${gasPrice.toString()} gasLimit=${txRequest.gasLimit ? txRequest.gasLimit.toString() : 'auto'} spendToken=${build.spendToken || 'unknown'}`);
                 if (this.config.gasLimit) {
                     txRequest.gasLimit = this.config.gasLimit;
                 } else if (!txRequest.gasLimit) {
                     txRequest.gasLimit = await wallet.estimateGas(Object.assign({}, txRequest));
+                    this.logger.info(`[gas-estimate] wallet=${wallet.address} gasLimit=${txRequest.gasLimit.toString()}`);
                 }
                 if (this.config.simulateBeforeSend) {
                     const simStart = Date.now();
