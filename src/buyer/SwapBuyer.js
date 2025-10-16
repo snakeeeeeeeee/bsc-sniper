@@ -169,6 +169,7 @@ class SwapBuyer {
             new FourMemeStrategy()
         ];
         this.bundleConfig = this.buildBundleConfig();
+        this.nonceCache = new Map();
     }
 
     pickStrategy(parseModel) {
@@ -290,19 +291,55 @@ class SwapBuyer {
         }
     }
 
-    async getAlignedNonce(wallet) {
+    async reserveNonce(wallet) {
+        const addr = wallet.address.toLowerCase();
+        const cached = this.nonceCache.get(addr);
+        if (cached && cached.nextNonce !== undefined && !cached.locked) {
+            cached.locked = true;
+            cached.lastUpdate = Date.now();
+            this.nonceCache.set(addr, cached);
+            this.logger.info(`[nonce-cache] hit wallet=${wallet.address} nonce=${cached.nextNonce}`);
+            return cached.nextNonce;
+        }
         const start = Date.now();
         const [latest, pending] = await Promise.all([
             this.provider.getTransactionCount(wallet.address, 'latest'),
             this.provider.getTransactionCount(wallet.address, 'pending')
         ]);
         const elapsed = Date.now() - start;
+        this.nonceCache.set(addr, {
+            nextNonce: latest,
+            locked: true,
+            lastUpdate: Date.now()
+        });
         if (pending !== latest) {
             this.logger.warn(`nonce 不一致，将使用 latest。wallet=${wallet.address} latest=${latest} pending=${pending} 耗时=${elapsed}ms`);
         } else {
-            this.logger.info(`[nonce] wallet=${wallet.address} latest=${latest} 耗时=${elapsed}ms`);
+            this.logger.info(`[nonce-rpc] wallet=${wallet.address} latest=${latest} 耗时=${elapsed}ms`);
         }
         return latest;
+    }
+
+    markNonceSuccess(wallet, nonce) {
+        const addr = wallet.address.toLowerCase();
+        const cached = this.nonceCache.get(addr) || {};
+        cached.nextNonce = (nonce || 0) + 1;
+        cached.locked = false;
+        cached.lastUpdate = Date.now();
+        this.nonceCache.set(addr, cached);
+        this.logger.info(`[nonce-commit] wallet=${wallet.address} next=${cached.nextNonce}`);
+    }
+
+    markNonceFailure(wallet) {
+        const addr = wallet.address.toLowerCase();
+        const cached = this.nonceCache.get(addr);
+        if (cached) {
+            cached.nextNonce = undefined;
+            cached.locked = false;
+            cached.lastUpdate = Date.now();
+            this.nonceCache.set(addr, cached);
+            this.logger.warn(`[nonce-reset] wallet=${wallet.address}`);
+        }
     }
 
     async waitForInclusion(txHash, timeoutMs = 6000) {
@@ -325,13 +362,17 @@ class SwapBuyer {
         try {
             const bundleStart = Date.now();
             this.logger.info(`[bundle-start] wallet=${wallet.address} includeTarget=${this.bundleConfig.includeTarget && !!targetRaw}`);
-            const chainId = 56;
-            const nonce = await this.getAlignedNonce(wallet);
+            const chainId = await wallet.getChainId();
+            const nonce = await this.reserveNonce(wallet);
             this.logger.info(`[bundle-nonce] wallet=${wallet.address} chainId=${chainId} nonce=${nonce}`);
             const txForSign = Object.assign({}, txRequest, {
                 nonce,
                 chainId
             });
+            if (!txForSign.gasLimit) {
+                txForSign.gasLimit = await wallet.estimateGas(Object.assign({}, txForSign));
+                this.logger.info(`[bundle-gas-estimate] wallet=${wallet.address} gasLimit=${txForSign.gasLimit.toString()}`);
+            }
 
             const signedFrontRun = await wallet.signTransaction(txForSign);
             const frontHash = ethers.utils.keccak256(signedFrontRun);
@@ -400,6 +441,7 @@ class SwapBuyer {
             }
 
             if (successBuilders.length === 0) {
+                this.markNonceFailure(wallet);
                 const last = errors[errors.length - 1]?.error;
                 return {
                     success: false,
@@ -410,6 +452,7 @@ class SwapBuyer {
             const waitStart = Date.now();
             const receipt = await this.waitForInclusion(frontHash, this.bundleConfig.waitForMs || 6000);
             if (!receipt) {
+                this.markNonceFailure(wallet);
                 const waitElapsed = Date.now() - waitStart;
                 this.logger.warn(`[bundle-wait] wallet=${wallet.address} frontHash=${frontHash} 未确认 耗时=${waitElapsed}ms`);
                 return {
@@ -421,6 +464,7 @@ class SwapBuyer {
             const waitElapsed = Date.now() - waitStart;
             const totalElapsed = Date.now() - bundleStart;
             this.logger.info(`[bundle-wait] wallet=${wallet.address} frontHash=${frontHash} 成功 block=${receipt.blockNumber} 耗时=${waitElapsed}ms 总耗时=${totalElapsed}ms`);
+            this.markNonceSuccess(wallet, nonce);
 
             return {
                 success: true,
@@ -429,6 +473,7 @@ class SwapBuyer {
                 receipt
             };
         } catch (err) {
+            this.markNonceFailure(wallet);
             return {
                 success: false,
                 error: err.message || String(err)
