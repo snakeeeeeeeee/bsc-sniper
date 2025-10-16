@@ -267,6 +267,8 @@ class SwapBuyer {
         if (!normalized) {
             return null;
         }
+        const hasSignature = normalized.r && normalized.s && normalized.v;
+        this.logger.info(`[pending-check] hash=${normalized.hash || 'unknown'} hasSig=${!!hasSignature}`);
         if (normalized.r && normalized.s && normalized.v) {
             return normalized;
         }
@@ -278,7 +280,10 @@ class SwapBuyer {
             if (!fetched) {
                 return null;
             }
-            return normalizePendingTx(Object.assign({}, fetched));
+            const merged = normalizePendingTx(Object.assign({}, fetched));
+            const afterSig = merged && merged.r && merged.s && merged.v;
+            this.logger.info(`[pending-fetch] hash=${normalized.hash} success=${!!merged} hasSig=${!!afterSig}`);
+            return merged;
         } catch (err) {
             this.logger.warn(`获取完整 pending 交易失败: ${err.message || err}`);
             return null;
