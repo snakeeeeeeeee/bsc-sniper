@@ -291,10 +291,16 @@ class SwapBuyer {
     }
 
     async getAlignedNonce(wallet) {
-        const latest = await this.provider.getTransactionCount(wallet.address, 'latest');
-        const pending = await this.provider.getTransactionCount(wallet.address, 'pending');
+        const start = Date.now();
+        const [latest, pending] = await Promise.all([
+            this.provider.getTransactionCount(wallet.address, 'latest'),
+            this.provider.getTransactionCount(wallet.address, 'pending')
+        ]);
+        const elapsed = Date.now() - start;
         if (pending !== latest) {
-            this.logger.warn(`nonce 不一致，将使用 latest。wallet=${wallet.address} latest=${latest} pending=${pending}`);
+            this.logger.warn(`nonce 不一致，将使用 latest。wallet=${wallet.address} latest=${latest} pending=${pending} 耗时=${elapsed}ms`);
+        } else {
+            this.logger.info(`[nonce] wallet=${wallet.address} latest=${latest} 耗时=${elapsed}ms`);
         }
         return latest;
     }
@@ -319,17 +325,14 @@ class SwapBuyer {
         try {
             const bundleStart = Date.now();
             this.logger.info(`[bundle-start] wallet=${wallet.address} includeTarget=${this.bundleConfig.includeTarget && !!targetRaw}`);
-            const chainId = await wallet.getChainId();
+            const chainId = 56;
             const nonce = await this.getAlignedNonce(wallet);
             this.logger.info(`[bundle-nonce] wallet=${wallet.address} chainId=${chainId} nonce=${nonce}`);
             const txForSign = Object.assign({}, txRequest, {
                 nonce,
                 chainId
             });
-            if (!txForSign.gasLimit) {
-                txForSign.gasLimit = await wallet.estimateGas(Object.assign({}, txForSign));
-                this.logger.info(`[bundle-gas-estimate] wallet=${wallet.address} gasLimit=${txForSign.gasLimit.toString()}`);
-            }
+
             const signedFrontRun = await wallet.signTransaction(txForSign);
             const frontHash = ethers.utils.keccak256(signedFrontRun);
             const gasPriceLike = txForSign.gasPrice || txForSign.maxFeePerGas;
