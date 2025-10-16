@@ -150,8 +150,8 @@ class SwapBuyer {
             gasPriceGwei: process.env.GAS_PRICE ? Number(process.env.GAS_PRICE) : null,
             buyValueBnb: ethers.utils.parseEther(process.env.BUY_VALUE_BNB || process.env.BUNDLE_BUY_VALUE_BNB || '0.00001'),
             buyValueUsd: process.env.BUY_VALUE_USD || '0.01',
-            simulateBeforeSend: process.env.SIMULATE_BEFORE_BUY ? String(process.env.SIMULATE_BEFORE_BUY).toLowerCase() !== 'false' : true,
-            forceZeroMinOut: process.env.FORCE_MIN_OUT_ZERO ? String(process.env.FORCE_MIN_OUT_ZERO).toLowerCase() === 'true' : false,
+            simulateBeforeSend: parseBoolean(process.env.SIMULATE_BEFORE_BUY, true),
+            forceZeroMinOut: parseBoolean(process.env.FORCE_MIN_OUT_ZERO, false),
             dryRun: dryRunFlag
         }, restConfig);
         this.wallets = privateKeys
