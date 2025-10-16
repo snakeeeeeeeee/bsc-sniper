@@ -240,7 +240,7 @@ class SwapBuyer {
         }
 
         const enabled = parseBoolean(process.env.BUNDLE_ENABLED, true) && providers.length > 0;
-        const includeTarget = parseBoolean(process.env.BUNDLE_INCLUDE_TARGET, true);
+        const includeTarget = parseBoolean(process.env.BUNDLE_INCLUDE_TARGET, false);
         const cfg = {
             enabled,
             includeTarget,
@@ -467,14 +467,18 @@ class SwapBuyer {
             if (!pendingContext) {
                 bundleSetupError = '缺少 pendingTx 数据，无法构建 bundle';
             } else {
-                targetPendingTx = await this.ensureFullPendingTx(pendingContext);
-                if (!targetPendingTx) {
-                    bundleSetupError = '未能获取完整的目标交易';
-                } else if (this.bundleConfig.includeTarget) {
-                    targetRaw = serializePendingTx(targetPendingTx);
-                    if (!targetRaw) {
-                        bundleSetupError = '目标交易缺少签名信息，无法序列化';
+                if (this.bundleConfig.includeTarget) {
+                    targetPendingTx = await this.ensureFullPendingTx(pendingContext);
+                    if (!targetPendingTx) {
+                        bundleSetupError = '未能获取完整的目标交易';
+                    } else {
+                        targetRaw = serializePendingTx(targetPendingTx);
+                        if (!targetRaw) {
+                            bundleSetupError = '目标交易缺少签名信息，无法序列化';
+                        }
                     }
+                } else {
+                    targetPendingTx = pendingContext;
                 }
             }
         }
